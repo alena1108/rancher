@@ -12,6 +12,7 @@ import (
 	"github.com/rancher/types/config"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/util/uuid"
 )
 
 const (
@@ -159,7 +160,7 @@ func setData(schemaID string, data map[string]interface{}) map[string]interface{
 }
 
 func resolveWorkloadID(schemaID string, data map[string]interface{}) string {
-	return fmt.Sprintf("%s-%s-%s", schemaID, data["namespaceId"], data["name"])
+	return fmt.Sprintf("%s-%s", schemaID, string(uuid.NewUUID()))
 }
 
 func (a *AggregateStore) Update(apiContext *types.APIContext, schema *types.Schema, data map[string]interface{}, id string) (map[string]interface{}, error) {
