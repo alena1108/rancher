@@ -33,51 +33,32 @@ func (c *PodsController) sync(key string, obj *corev1.Pod) error {
 		return nil
 	}
 
-	var pods []*corev1.Pod
-	var services []*corev1.Service
-	var err error
-	if strings.HasSuffix(key, allEndpoints) {
-		namespace := ""
-		if !strings.EqualFold(key, allEndpoints) {
-			namespace = strings.TrimSuffix(key, fmt.Sprintf("/%s", allEndpoints))
-		}
-		pods, err = c.podLister.List(namespace, labels.NewSelector())
-		if err != nil {
-			return err
-		}
-		services, err = c.serviceLister.List(namespace, labels.NewSelector())
-		if err != nil {
-			return err
-		}
-	} else {
-		services, err = c.serviceLister.List(obj.Namespace, labels.NewSelector())
-		if err != nil {
-			return err
-		}
-		pods = append(pods, obj)
+	pods, services, err := c.collectPodsAndServices(key, obj)
+	if err != nil {
+		return err
 	}
 
-	nodesToUpdate := map[string]bool{}
-	workloadsToUpdate := map[string]*workloadutil.Workload{}
 	nodeNameToMachine, err := getNodeNameToMachine(c.clusterName, c.machinesLister, c.nodeLister)
 	if err != nil {
 		return err
 	}
+
+	// update pods
+	nodesToUpdate := map[string]bool{}
+	workloadsToUpdate := map[string]*workloadutil.Workload{}
 	for _, pod := range pods {
 		updated, err := c.updatePodEndpoints(pod, services, nodeNameToMachine)
 		if err != nil {
 			return err
 		}
-		if updated {
-			if pod.Spec.NodeName != "" && podHasHostPort(pod) {
-				nodesToUpdate[pod.Spec.NodeName] = true
-				workloads, err := c.workloadController.GetWorkloadsMatchingLabels(pod.Namespace, pod.Labels)
-				if err != nil {
-					return err
-				}
-				for _, w := range workloads {
-					workloadsToUpdate[key] = w
-				}
+		if updated && pod.Spec.NodeName != "" && podHasHostPort(pod) {
+			nodesToUpdate[pod.Spec.NodeName] = true
+			workloads, err := c.workloadController.GetWorkloadsMatchingLabels(pod.Namespace, pod.Labels)
+			if err != nil {
+				return err
+			}
+			for _, w := range workloads {
+				workloadsToUpdate[key] = w
 			}
 		}
 	}
@@ -92,6 +73,33 @@ func (c *PodsController) sync(key string, obj *corev1.Pod) error {
 	}
 
 	return nil
+}
+
+func (c *PodsController) collectPodsAndServices(key string, obj *corev1.Pod) ([]*corev1.Pod, []*corev1.Service, error) {
+	var pods []*corev1.Pod
+	var services []*corev1.Service
+	var err error
+	if strings.HasSuffix(key, allEndpoints) {
+		namespace := ""
+		if !strings.EqualFold(key, allEndpoints) {
+			namespace = strings.TrimSuffix(key, fmt.Sprintf("/%s", allEndpoints))
+		}
+		pods, err = c.podLister.List(namespace, labels.NewSelector())
+		if err != nil {
+			return nil, nil, err
+		}
+		services, err = c.serviceLister.List(namespace, labels.NewSelector())
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		services, err = c.serviceLister.List(obj.Namespace, labels.NewSelector())
+		if err != nil {
+			return nil, nil, err
+		}
+		pods = append(pods, obj)
+	}
+	return pods, services, nil
 }
 
 func podHasHostPort(obj *corev1.Pod) bool {
