@@ -13,9 +13,7 @@ import (
 type IngressEndpointsController struct {
 	workloadController workloadutil.CommonController
 	ingressInterface   v1beta1.IngressInterface
-	machinesLister     managementv3.NodeLister
 	isRKE              bool
-	clusterName        string
 }
 
 func (c *IngressEndpointsController) sync(key string, obj *extensionsv1beta1.Ingress) error {
@@ -34,23 +32,20 @@ func (c *IngressEndpointsController) sync(key string, obj *extensionsv1beta1.Ing
 		return nil
 	}
 
-	if _, err := c.reconcileEndpointsForIngress(obj); err != nil {
-		return err
-	}
-	return nil
+	return c.reconcileEndpointsForIngress(obj)
 }
 
-func (c *IngressEndpointsController) reconcileEndpointsForIngress(obj *extensionsv1beta1.Ingress) (bool, error) {
+func (c *IngressEndpointsController) reconcileEndpointsForIngress(obj *extensionsv1beta1.Ingress) error {
 	fromObj := convertIngressToPublicEndpoints(obj, c.isRKE)
 	fromAnnotation := getPublicEndpointsFromAnnotations(obj.Annotations)
 
 	if areEqualEndpoints(fromAnnotation, fromObj) {
-		return false, nil
+		return nil
 	}
 
 	epsToUpdate, err := publicEndpointsToString(fromObj)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	logrus.Infof("Updating ingress [%s:%s] with public endpoints [%v]", obj.Namespace, obj.Name, epsToUpdate)
@@ -62,5 +57,5 @@ func (c *IngressEndpointsController) reconcileEndpointsForIngress(obj *extension
 	toUpdate.Annotations[endpointsAnnotation] = epsToUpdate
 	_, err = c.ingressInterface.Update(toUpdate)
 
-	return false, err
+	return err
 }

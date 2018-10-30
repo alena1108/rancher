@@ -7,6 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"github.com/aws/aws-sdk-go/awstesting/integration/smoke/es"
 )
 
 // This controller is responsible for monitoring services
@@ -14,9 +15,6 @@ import (
 
 type ServicesController struct {
 	services           v1.ServiceInterface
-	serviceLister      v1.ServiceLister
-	podLister          v1.PodLister
-	podController      v1.PodController
 	workloadController workloadutil.CommonController
 	machinesLister     v3.NodeLister
 	clusterName        string
@@ -28,40 +26,32 @@ func (s *ServicesController) sync(key string, obj *corev1.Service) error {
 		if obj != nil {
 			namespace = obj.Namespace
 		}
-		// push changes to all pods, so service
-		// endpoints can be removed from there
-		//since service is removed, there is no way to narrow down the pod/workload search
-		s.podController.Enqueue(namespace, allEndpoints)
+		//since service is removed, there is no way to narrow down the workload search
 		s.workloadController.EnqueueAllWorkloads(namespace)
 		return nil
 	}
-	_, err := s.reconcileEndpointsForService(obj)
+	return s.reconcileEndpointsForService(obj)
+}
+
+func (s *ServicesController) reconcileEndpointsForService(svc *corev1.Service) error {
+	// 1. update service with endpoints
+	allNodesIP, err := getAllNodesPublicEndpointIP(s.machinesLister, s.clusterName)
+	if err != nil {
+		return err
+	}
+	newPublicEps, err := convertServiceToPublicEndpoints(svc, "", nil, allNodesIP)
 	if err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func (s *ServicesController) reconcileEndpointsForService(svc *corev1.Service) (bool, error) {
-	// 1. update service with endpoints
-	allNodesIP, err := getAllNodesPublicEndpointIP(s.machinesLister, s.clusterName)
-	if err != nil {
-		return false, err
-	}
-	newPublicEps, err := convertServiceToPublicEndpoints(svc, "", nil, allNodesIP)
-	if err != nil {
-		return false, err
-	}
-
 	existingPublicEps := getPublicEndpointsFromAnnotations(svc.Annotations)
 	if areEqualEndpoints(existingPublicEps, newPublicEps) {
-		return false, nil
+		return nil
 	}
 	toUpdate := svc.DeepCopy()
 	epsToUpdate, err := publicEndpointsToString(newPublicEps)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	logrus.Infof("Updating service [%s] with public endpoints [%v]", svc.Name, epsToUpdate)
@@ -71,31 +61,17 @@ func (s *ServicesController) reconcileEndpointsForService(svc *corev1.Service) (
 	toUpdate.Annotations[endpointsAnnotation] = epsToUpdate
 	_, err = s.services.Update(toUpdate)
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	// 2. Push changes for pods behind the service
-	var pods []*corev1.Pod
-	set := labels.Set{}
-	for key, val := range svc.Spec.Selector {
-		set[key] = val
-	}
-	pods, err = s.podLister.List(svc.Namespace, labels.SelectorFromSet(set))
-	if err != nil {
-		return false, err
-	}
-	for _, pod := range pods {
-		s.podController.Enqueue(pod.Namespace, pod.Name)
-	}
-
-	// 3. Push changes to workload behind the service
+	// 2. Push changes to workload behind the service
 	workloads, err := s.workloadController.GetWorkloadsMatchingSelector(svc.Namespace, svc.Spec.Selector)
 	if err != nil {
-		return false, err
+		return err
 	}
 	for _, w := range workloads {
 		s.workloadController.EnqueueWorkload(w)
 	}
 
-	return true, nil
+	return nil
 }
