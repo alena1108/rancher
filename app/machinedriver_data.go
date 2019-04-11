@@ -27,6 +27,12 @@ func addMachineDrivers(management *config.ManagementContext) error {
 		"e98f246f625ca46f5e037dc29bdf00fe", []string{"*.otc.t-systems.com"}, false, false, management); err != nil {
 		return err
 	}
+
+	if err := addMachineDriver("linode", "https://github.com/linode/docker-machine-driver-linode/releases/download/v0.1.7/docker-machine-driver-linode_linux-amd64.zip",
+		"https://linode.github.io/rancher-ui-driver-linode/releases/v0.2.0/component.js", "faaf1d7d53b55a369baeeb0855b069921a36131868fe3641eb595ac1ff4cf16f",
+		[]string{"linode.github.io"}, false, false, management); err != nil {
+		return err
+	}
 	if err := addMachineDriver("packet", "https://github.com/packethost/docker-machine-driver-packet/releases/download/v0.1.4/docker-machine-driver-packet_linux-amd64.zip",
 		"2cd0b9614ab448b61b1bf73ef4738ab5", []string{"api.packet.net"}, false, false, management); err != nil {
 		return err
