@@ -241,28 +241,6 @@ type SimpleProxy struct {
 	overrideHostHeader bool
 }
 
-func NewSimpleProxy(host string, caData []byte, overrideHostHeader bool) (*SimpleProxy, error) {
-	hostURL, _, err := rest.DefaultServerURL(host, "", schema.GroupVersion{}, true)
-	if err != nil {
-		return nil, err
-	}
-
-	ht := &http.Transport{}
-	if len(caData) > 0 {
-		certPool := x509.NewCertPool()
-		certPool.AppendCertsFromPEM(caData)
-		ht.TLSClientConfig = &tls.Config{
-			RootCAs: certPool,
-		}
-	}
-
-	return &SimpleProxy{
-		url:                hostURL,
-		transport:          ht,
-		overrideHostHeader: overrideHostHeader,
-	}, nil
-}
-
 func (s *SimpleProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	u := *s.url
 	u.Path = req.URL.Path
