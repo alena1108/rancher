@@ -148,7 +148,9 @@ func (r *RemoteService) getTransport() (http.RoundTripper, error) {
 		return r.httpTransport, nil
 	}
 
-	transport := &http.Transport{}
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+	}
 	if newCluster.Status.CACert != "" {
 		certBytes, err := base64.StdEncoding.DecodeString(newCluster.Status.CACert)
 		if err != nil {
